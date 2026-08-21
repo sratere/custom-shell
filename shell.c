@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
+#include "customFunctions.h"
 
 int main(){
     char buf[1024];
@@ -40,9 +42,20 @@ int main(){
 
         //another printer to check
         write(STDOUT_FILENO, "args contents:\n", 15);
-        if(args[0] != NULL && strcmp(args[0], "exit") == 0){
-            write(STDOUT_FILENO, "exit", 4);
+
+        if(args[0] != NULL && strcmp(args[0], "exit") == 0){//exit functionality
             break;
+        }
+
+        if(args[0] != NULL && strcmp(args[0], "cd") == 0){//cd functionality
+            if(args[1] != NULL){
+                if(chdir(args[1]) != 0){ //mnonzero means failure
+                    write(STDERR_FILENO, "cd failed\n", 10);
+                }
+            } else {
+                write(STDERR_FILENO, "cd: missing argument\n", 21);
+            }
+            continue;// to restart the loop
         }
 
         for(int j = 0; j < i; j++){
@@ -50,6 +63,19 @@ int main(){
             write(STDOUT_FILENO, "\n", 1);
         }
 
+        //execute the command in a child process
+        pid_t pid = fork();
+        if(pid < 0){
+            write(STDERR_FILENO, "fork failed\n", 12);
+            exit(EXIT_FAILURE);
+        } else if(pid == 0){
+            if(customExecvp(args[0], args) == -1){
+                write(STDERR_FILENO, "command not found\n", 18);    
+                exit(EXIT_FAILURE);
+            }
+        } else if(pid > 0){
+            waitpid(pid, NULL, 0);//wait for command in child process to finish
+        }
     }
 
     return 0;
