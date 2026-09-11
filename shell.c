@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include "customFunctions.h"
+#include <fcntl.h>
 
 int main(){
     char buf[1024];
@@ -69,9 +70,40 @@ int main(){
             write(STDERR_FILENO, "fork failed\n", 12);
             exit(EXIT_FAILURE);
         } else if(pid == 0){
-            if(customExecvp(args[0], args) == -1){
+            for(int j = 0; j < i; j++){
+                if(strcmp(args[j], ">") == 0){
+                    args[j] = NULL; // terminate the command arguments
+                    if(args[j+1] == NULL){
+                        write(STDERR_FILENO, "missing file for output redirection\n", 36);
+                        exit(EXIT_FAILURE);
+                    }
+                    int fd = open(args[j + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    if(fd < 0){
+                        write(STDERR_FILENO, "failed to open file for output redirection\n", 44);
+                        exit(EXIT_FAILURE);
+                    }
+                    dup2(fd, STDOUT_FILENO); // redirect stdout to the file
+                    close(fd);
+                    break;
+                } else if(strcmp(args[j], "<") == 0){
+                    args[j] = NULL; // terminate the command arguments
+                    if(args[j+1] == NULL){
+                        write(STDERR_FILENO, "missing file for input redirection\n", 36);
+                        exit(EXIT_FAILURE);
+                    }
+                    int fd = open(args[j + 1], O_RDONLY);
+                    if(fd < 0){
+                        write(STDERR_FILENO, "failed to open file for input redirection\n", 43);
+                        exit(EXIT_FAILURE);
+                    }
+                    dup2(fd, STDIN_FILENO); // redirect stdin from the file
+                    close(fd);
+                    break;
+                }
+                if(customExecvp(args[0], args) == -1){
                 write(STDERR_FILENO, "command not found\n", 18);    
                 exit(EXIT_FAILURE);
+            }
             }
         } else if(pid > 0){
             waitpid(pid, NULL, 0);//wait for command in child process to finish
