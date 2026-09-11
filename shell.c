@@ -64,6 +64,64 @@ int main(){
             write(STDOUT_FILENO, "\n", 1);
         }
 
+        // --- piping ---
+        int pipe_idx = -1;
+        for (int j = 0; args[j] != NULL; j++) {
+            if (strcmp(args[j], "|") == 0) {
+                pipe_idx = j;
+                break; 
+            }
+        }
+
+        if (pipe_idx != -1) {
+            args[pipe_idx] = NULL; // terminate the left command
+            char **cmd1 = args;                      // left cmd (e.g., "ls")
+            char **cmd2 = &args[pipe_idx + 1];       // right cmd (e.g., "grep")
+
+            // create pipe
+            int fd[2];
+            if (pipe(fd) == -1) {
+                write(STDERR_FILENO, "mintsh: pipe failed\n", 20);
+                continue;
+            }
+
+            // fork the first child (left side of the pipe)
+            pid_t pid1 = fork();
+            if (pid1 == 0) {
+                dup2(fd[1], STDOUT_FILENO); // STDOUT goes to the write end of the pipe
+                close(fd[0]);               // close unused read end
+                close(fd[1]);               // close original write end after duplicating
+        
+                if (customExecvp(cmd1[0], cmd1) == -1) {
+                    write(STDERR_FILENO, "mintsh: command not found\n", 26);
+                    exit(EXIT_FAILURE);
+                }
+            }
+
+            // fork the second child (right side of the pipe)
+            pid_t pid2 = fork();
+            if (pid2 == 0) {
+                dup2(fd[0], STDIN_FILENO);  //STDIN goes to the read end of the pipe
+                close(fd[1]);               // close unused write end
+                close(fd[0]);               // close original read end after duplicating
+        
+                if (customExecvp(cmd2[0], cmd2) == -1) {
+                    write(STDERR_FILENO, "mintsh: command not found\n", 26);
+                    exit(EXIT_FAILURE);
+                }
+            }
+
+            //parent has to close both pipe ends
+            close(fd[0]);
+            close(fd[1]);
+
+            // wait for both children to finish
+            waitpid(pid1, NULL, 0);
+            waitpid(pid2, NULL, 0);
+
+            continue; //skip the rest of the loop
+        }
+
         //execute the command in a child process
         pid_t pid = fork();
         if(pid < 0){
